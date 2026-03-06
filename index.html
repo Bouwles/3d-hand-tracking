@@ -1,344 +1,574 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Hand AR</title>
-  <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#000; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-    #stage { position:fixed; inset:0; overflow:hidden; }
-    #video {
-      position:absolute; inset:0;
-      width:100%; height:100%;
-      object-fit:cover;
-      background:#000;
-      transform-origin:center center;
-    }
-    #gl {
-      position:absolute; inset:0;
-      width:100%; height:100%;
-      pointer-events:none;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASL Interpreter</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
 
-    #status {
-      position:fixed; left:12px; top:12px; z-index:50;
-      color:rgba(215,225,255,.92);
-      background:rgba(0,0,0,.28);
-      border:1px solid rgba(255,255,255,.10);
-      padding:8px 10px; border-radius:12px;
-      backdrop-filter: blur(6px);
-      max-width: 560px;
-      line-height:1.35;
-      font-weight:650;
-      user-select:none;
-    }
+#video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 0; }
+#canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); z-index: 1; pointer-events: none; }
 
-    #controls {
-      position:fixed; left:12px; bottom:12px; z-index:60;
-      display:flex; gap:10px; align-items:center;
-    }
-    .btn{
-      cursor:pointer; border-radius:12px;
-      border:1px solid rgba(255,255,255,.18);
-      background:rgba(255,255,255,.10);
-      color:#d7e1ff; padding:10px 12px; font-weight:800; user-select:none;
-    }
-    .btn:hover{ background:rgba(255,255,255,.14); }
-  </style>
+#sign-display {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  text-align: center;
+  pointer-events: none;
+}
+#sign-label {
+  font-size: clamp(3.5rem, 11vw, 8rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 40px rgba(0,0,0,0.8), 0 2px 8px rgba(0,0,0,0.9);
+  color: #fff;
+  line-height: 1;
+  transition: opacity 0.15s;
+  opacity: 0;
+}
+#confidence-bar-wrap {
+  margin-top: 12px;
+  width: 200px;
+  height: 4px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-left: auto;
+  margin-right: auto;
+}
+#confidence-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #4af, #8ff);
+  border-radius: 2px;
+  transition: width 0.05s linear;
+}
+
+#history-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 14px 24px 18px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.75));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  overflow-x: auto;
+}
+.history-word {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  animation: fadeIn 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+#clear-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+#clear-btn:hover { background: rgba(255,255,255,0.22); }
+
+#ref-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  backdrop-filter: blur(8px);
+}
+#ref-toggle:hover { background: rgba(0,0,0,0.7); }
+
+#status {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.5);
+  padding: 6px 12px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
+}
+
+#ref-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  background: rgba(10,10,15,0.93);
+  backdrop-filter: blur(16px);
+  z-index: 15;
+  overflow-y: auto;
+  padding: 60px 20px 20px;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+#ref-panel.open { transform: translateX(0); }
+#ref-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.1em; }
+#ref-panel .subtitle { font-size: 0.72rem; color: rgba(255,255,255,0.35); margin-bottom: 16px; line-height: 1.4; }
+#ref-panel .made-by { font-size: 0.68rem; color: rgba(255,255,255,0.25); margin-top: 24px; text-align: center; }
+.ref-section { margin-bottom: 20px; }
+.ref-section h3 { font-size: 0.72rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+.ref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; }
+.ref-item {
+  background: rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+  color: rgba(255,255,255,0.75);
+}
+.ref-item .sign-key { font-weight: 700; font-size: 0.88rem; color: #fff; display: block; margin-bottom: 2px; }
+.ref-item .sign-hint { font-size: 0.58rem; color: rgba(255,255,255,0.4); line-height: 1.3; }
+</style>
 </head>
 <body>
-  <div id="status">Status: requesting camera permission…</div>
 
-  <div id="controls">
-    <button id="invertBtn" class="btn">invest camera</button>
+<video id="video" playsinline autoplay muted></video>
+<canvas id="canvas"></canvas>
+
+<div id="sign-display">
+  <div id="sign-label"></div>
+  <div id="confidence-bar-wrap">
+    <div id="confidence-bar"></div>
   </div>
+</div>
 
-  <div id="stage">
-    <video id="video" playsinline muted></video>
-    <canvas id="gl"></canvas>
+<div id="history-bar">
+  <button id="clear-btn">Clear</button>
+</div>
+
+<div id="status">Initializing...</div>
+<button id="ref-toggle">Reference</button>
+
+<div id="ref-panel">
+  <h2>Supported Signs</h2>
+  <p class="subtitle">Hold each sign steady for ~0.6s to register it.</p>
+  <div class="ref-section">
+    <h3>Numbers 0 – 9</h3>
+    <div class="ref-grid" id="ref-numbers"></div>
   </div>
+  <div class="ref-section">
+    <h3>Responses</h3>
+    <div class="ref-grid" id="ref-responses"></div>
+  </div>
+  <div class="ref-section">
+    <h3>Actions &amp; Verbs</h3>
+    <div class="ref-grid" id="ref-actions"></div>
+  </div>
+  <div class="ref-section">
+    <h3>People &amp; Phrases</h3>
+    <div class="ref-grid" id="ref-people"></div>
+  </div>
+  <p class="made-by">Made by Paul Nercessian</p>
+</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
-  <script>
-    const statusEl = document.getElementById("status");
-    const videoEl  = document.getElementById("video");
-    const glCanvas = document.getElementById("gl");
+<script>
+(function () {
+'use strict';
 
-    const invertBtn = document.getElementById("invertBtn");
+var video    = document.getElementById('video');
+var canvas   = document.getElementById('canvas');
+var ctx      = canvas.getContext('2d');
+var signLabel     = document.getElementById('sign-label');
+var confidenceBar = document.getElementById('confidence-bar');
+var historyBar    = document.getElementById('history-bar');
+var clearBtn      = document.getElementById('clear-btn');
+var statusEl      = document.getElementById('status');
+var refToggle     = document.getElementById('ref-toggle');
+var refPanel      = document.getElementById('ref-panel');
 
-    let isInverted = false;
-    function applyVideoTransform(){ videoEl.style.transform = isInverted ? "scaleX(-1)" : "scaleX(1)"; }
-    applyVideoTransform();
-    invertBtn.addEventListener("click", () => { isInverted = !isInverted; applyVideoTransform(); });
+var SIGN_HINTS = {
+  '0':'all fingers form O shape',
+  '1':'index points straight up',
+  '2':'index+middle spread apart (V)',
+  '3':'thumb+index+middle up',
+  '4':'four fingers up, palm forward',
+  '5':'all five spread, palm forward',
+  '6':'thumb+pinky touch, 3 up',
+  '7':'thumb+ring touch, others up',
+  '8':'thumb+middle touch, palm fwd',
+  '9':'index+thumb loop, others down',
+  'YES':'closed fist, palm forward',
+  'NO':'index+middle together, palm fwd',
+  'GOOD':'all five fingers, palm down',
+  'SORRY':'closed fist, palm toward you',
+  'THANK YOU':'4 fingers, palm down forward',
+  'PLEASE':'4 fingers, palm toward body',
+  'HELLO':'all five spread wide, palm fwd',
+  'HELP':'thumb only up (thumbs up)',
+  'STOP':'4 fingers, palm sideways',
+  'WANT':'4 fingers, palm facing up',
+  'MORE':'all fingertips pinched together',
+  'EAT':'all tips pinched to thumb, palm in',
+  'THINK':'index up, palm facing sideways',
+  'KNOW':'index+middle up, palm toward face',
+  'LIKE':'thumb+middle pinch, 3 fingers up, palm in',
+  'NEED':'index pointing downward',
+  'YOU':'index pointing forward at camera',
+  'WATER':'index+middle+ring spread (W shape)',
+  'MOTHER':'all five open, palm sideways',
+  'FRIEND':'index hooked, others curled',
+  'I LOVE YOU':'pinky+index+thumb out'
+};
 
-    // --- Three.js overlay ---
-    const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias:true, alpha:true });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    renderer.setClearColor(0x000000, 0);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+var NUMBERS  = ['0','1','2','3','4','5','6','7','8','9'];
+var RESPONSES = ['YES','NO','GOOD','SORRY','THANK YOU','PLEASE','HELLO'];
+var ACTIONS   = ['HELP','STOP','WANT','MORE','EAT','THINK','KNOW','LIKE','NEED','YOU'];
+var PEOPLE    = ['WATER','MOTHER','FRIEND','I LOVE YOU'];
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 100);
-    camera.position.set(0, 0, 2.2);
+function makeItem(key) {
+  var d = document.createElement('div');
+  d.className = 'ref-item';
+  d.innerHTML = '<span class="sign-key">' + key + '</span><span class="sign-hint">' + (SIGN_HINTS[key]||'') + '</span>';
+  return d;
+}
+var rN = document.getElementById('ref-numbers');
+var rR = document.getElementById('ref-responses');
+var rA = document.getElementById('ref-actions');
+var rP = document.getElementById('ref-people');
+NUMBERS.forEach(function(s){ rN.appendChild(makeItem(s)); });
+RESPONSES.forEach(function(s){ rR.appendChild(makeItem(s)); });
+ACTIONS.forEach(function(s){ rA.appendChild(makeItem(s)); });
+PEOPLE.forEach(function(s){ rP.appendChild(makeItem(s)); });
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.70));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.95);
-    dir.position.set(2, 3, 2);
-    scene.add(dir);
+refToggle.addEventListener('click', function(){ refPanel.classList.toggle('open'); });
 
-    // Hand rig
-    const BONES = [
-      [0,1],[1,2],[2,3],[3,4],
-      [0,5],[5,6],[6,7],[7,8],
-      [0,9],[9,10],[10,11],[11,12],
-      [0,13],[13,14],[14,15],[15,16],
-      [0,17],[17,18],[18,19],[19,20],
-      [5,9],[9,13],[13,17]
-    ];
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
 
-    function jointRadius(i){
-      if (i === 0) return 0.032;
-      if ([1,5,9,13,17].includes(i)) return 0.028;
-      if ([4,8,12,16,20].includes(i)) return 0.021;
-      return 0.024;
+var ALPHA = 0.35;
+var smLm = null;
+
+function smooth(raw) {
+  if (!smLm || smLm.length !== raw.length) {
+    smLm = raw.map(function(p){ return {x:p.x, y:p.y, z:p.z||0}; });
+    return smLm;
+  }
+  for (var i = 0; i < raw.length; i++) {
+    smLm[i].x += ALPHA * (raw[i].x - smLm[i].x);
+    smLm[i].y += ALPHA * (raw[i].y - smLm[i].y);
+    smLm[i].z += ALPHA * ((raw[i].z||0) - smLm[i].z);
+  }
+  return smLm;
+}
+
+function d2(a, b) {
+  var dx=a.x-b.x, dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+function angle3(a, b, c) {
+  var ux=a.x-b.x, uy=a.y-b.y;
+  var vx=c.x-b.x, vy=c.y-b.y;
+  var dot=ux*vx+uy*vy;
+  var ma=Math.sqrt(ux*ux+uy*uy), mb=Math.sqrt(vx*vx+vy*vy);
+  return Math.acos(Math.max(-1,Math.min(1,dot/(ma*mb+1e-8))))*180/Math.PI;
+}
+
+var LW=0, T1=1,T2=2,T3=3,T4=4;
+var I1=5,I2=6,I3=7,I4=8;
+var M1=9,M2=10,M3=11,M4=12;
+var R1=13,R2=14,R3=15,R4=16;
+var P1=17,P2=18,P3=19,P4=20;
+
+function ext(lm) {
+  var tOut = d2(lm[T4],lm[I1]) > d2(lm[T3],lm[I1]);
+  return {
+    t: tOut,
+    i: d2(lm[I4],lm[LW]) > d2(lm[I2],lm[LW])*1.08,
+    m: d2(lm[M4],lm[LW]) > d2(lm[M2],lm[LW])*1.08,
+    r: d2(lm[R4],lm[LW]) > d2(lm[R2],lm[LW])*1.08,
+    p: d2(lm[P4],lm[LW]) > d2(lm[P2],lm[LW])*1.08
+  };
+}
+
+function palmCrossZ(lm) {
+  var ax=lm[I1].x-lm[LW].x, ay=lm[I1].y-lm[LW].y;
+  var bx=lm[P1].x-lm[LW].x, by=lm[P1].y-lm[LW].y;
+  return ax*by - ay*bx;
+}
+
+function palmCrossY(lm) {
+  var ax=lm[I1].x-lm[LW].x, az=(lm[I1].z||0)-(lm[LW].z||0);
+  var bx=lm[P1].x-lm[LW].x, bz=(lm[P1].z||0)-(lm[LW].z||0);
+  return az*bx - ax*bz;
+}
+
+function palmCrossX(lm) {
+  var ay=lm[I1].y-lm[LW].y, az=(lm[I1].z||0)-(lm[LW].z||0);
+  var by=lm[P1].y-lm[LW].y, bz=(lm[P1].z||0)-(lm[LW].z||0);
+  return ay*bz - az*by;
+}
+
+function palmFwd(lm)  { return palmCrossZ(lm) < 0; }
+function palmDown(lm) { return palmCrossY(lm) > 0; }
+function palmSide(lm) { return palmCrossX(lm) < -0.12; }
+function palmUp(lm)   { return palmCrossY(lm) < -0.04; }
+function palmIn(lm) {
+  var pz = palmCrossZ(lm), px = palmCrossX(lm);
+  return pz > 0.05 && Math.abs(px) < Math.abs(pz) * 0.8;
+}
+
+function ti(lm){ return d2(lm[T4],lm[I4]) < 0.07; }
+function tm(lm){ return d2(lm[T4],lm[M4]) < 0.07; }
+function tr(lm){ return d2(lm[T4],lm[R4]) < 0.07; }
+function tp(lm){ return d2(lm[T4],lm[P4]) < 0.07; }
+function im(lm){ return d2(lm[I4],lm[M4]) < 0.058; }
+
+function indexHooked(lm) {
+  var a = angle3(lm[I1],lm[I2],lm[I4]);
+  return a < 135 && a > 45;
+}
+
+function gathered(lm) {
+  var tips=[lm[I4],lm[M4],lm[R4],lm[P4]], mx=0;
+  for(var i=0;i<4;i++) for(var j=i+1;j<4;j++) mx=Math.max(mx,d2(tips[i],tips[j]));
+  return mx < 0.09;
+}
+
+function tipsToThumb(lm) {
+  return d2(lm[I4],lm[T4])<0.09 && d2(lm[M4],lm[T4])<0.12 &&
+         d2(lm[R4],lm[T4])<0.12 && d2(lm[P4],lm[T4])<0.13;
+}
+
+function classify(lm) {
+  var e = ext(lm);
+  var T=e.t, I=e.i, M=e.m, R=e.r, P=e.p;
+  var isFwd  = palmFwd(lm);
+  var isDn   = palmDown(lm);
+  var isSide = palmSide(lm);
+  var isUp   = palmUp(lm);
+  var isIn   = palmIn(lm);
+
+  if (T && I && !M && !R && P) return 'I LOVE YOU';
+  if (T && !I && !M && !R && !P) return 'HELP';
+
+  if (T && I && M && R && P) {
+    var spread = d2(lm[I4],lm[P4]);
+    if (isDn && !isFwd)            return 'GOOD';
+    if (isSide)                    return 'MOTHER';
+    if (isFwd && spread > 0.18)    return 'HELLO';
+    if (isFwd && spread <= 0.18)   return '5';
+    return null;
+  }
+
+  if (!T && !I && !M && !R && !P) {
+    if (tipsToThumb(lm)) {
+      if (isFwd) return '0';
+      return 'EAT';
     }
-    function boneThickness(a,b){
-      const tip = [4,8,12,16,20];
-      const mid = [3,7,11,15,19];
-      if (tip.includes(a) || tip.includes(b)) return 0.010;
-      if (mid.includes(a) || mid.includes(b)) return 0.012;
-      if (a === 0 || b === 0) return 0.016;
-      return 0.013;
-    }
+    if (isFwd) return 'YES';
+    return 'SORRY';
+  }
 
-    function setCylinderBetween(cyl, a, b){
-      const d = new THREE.Vector3().subVectors(b, a);
-      const len = d.length();
-      if (len < 1e-6) { cyl.visible = false; return; }
-      cyl.visible = true;
-      const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-      cyl.position.copy(mid);
-      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), d.clone().normalize());
-      cyl.quaternion.copy(q);
-      cyl.scale.set(1, len, 1);
-    }
+  if (!T && I && M && R && P) {
+    if (isDn && isFwd)  return 'THANK YOU';
+    if (isDn)           return 'THANK YOU';
+    if (isSide)         return 'STOP';
+    if (isUp)           return 'WANT';
+    if (isIn)           return 'PLEASE';
+    if (isFwd)          return '4';
+    return null;
+  }
 
-    function makeHand(colorA, colorB, palmColor){
-      const group = new THREE.Group();
-      scene.add(group);
+  if (!T && gathered(lm) && (I || M || R || P)) return 'MORE';
 
-      const jointMat = new THREE.MeshStandardMaterial({ color: colorA, roughness: 0.35, metalness: 0.06 });
-      const boneMat  = new THREE.MeshStandardMaterial({ color: colorB, roughness: 0.55, metalness: 0.03 });
-      const palmMat  = new THREE.MeshStandardMaterial({
-        color: palmColor, roughness: 0.55, metalness: 0.02,
-        transparent: true, opacity: 0.24, side: THREE.DoubleSide
-      });
+  if (!T && I && M && R && !P) {
+    if (d2(lm[I4],lm[M4]) > 0.055 && d2(lm[M4],lm[R4]) > 0.055) return 'WATER';
+  }
 
-      const joints = [];
-      for (let i=0;i<21;i++){
-        const m = new THREE.Mesh(new THREE.SphereGeometry(jointRadius(i), 18, 14), jointMat);
-        group.add(m);
-        joints.push(m);
+  if (!T && I && M && !R && !P) {
+    if (im(lm) && isFwd && d2(lm[I4],lm[M4]) < 0.052) return 'NO';
+    if (isIn) return 'KNOW';
+    if (d2(lm[I4],lm[M4]) > 0.065 && isFwd) return '2';
+    if (!im(lm) && isFwd) return '2';
+    return null;
+  }
+
+  if (!T && I && !M && !R && !P) {
+    var iy = lm[I4].y - lm[I1].y;
+    if (iy > 0.05) return 'NEED';
+    if (isSide && iy < -0.06) return 'THINK';
+    if (iy > -0.05) return 'YOU';
+    if (iy < -0.06 && isFwd) return '1';
+    return null;
+  }
+
+  if (!T && !M && !R && !P && indexHooked(lm)) return 'FRIEND';
+
+  if (ti(lm) && !M && !R && !P) return '9';
+  if (T && I && M && !R && !P && !ti(lm) && !tm(lm)) return '3';
+  if (tp(lm) && I && M && R && !P) return '6';
+  if (tr(lm) && I && M && !R && P) return '7';
+
+  if (tm(lm) && I && !M && R && P) {
+    if (isIn || !isFwd) return 'LIKE';
+    return '8';
+  }
+
+  return null;
+}
+
+
+var VOTE_N = 8;
+var voteQ  = [];
+
+function stableSign(sign) {
+  voteQ.push(sign);
+  if (voteQ.length > VOTE_N) voteQ.shift();
+  var counts = {};
+  voteQ.forEach(function(s){ if (s) counts[s] = (counts[s]||0)+1; });
+  var best=null, top=0;
+  Object.keys(counts).forEach(function(s){
+    if (counts[s]>top){ top=counts[s]; best=s; }
+  });
+  return (top >= Math.ceil(VOTE_N * 0.62)) ? best : null;
+}
+
+var HOLD_MS  = 600;
+var lastSign = null, holdStart = 0, dispSign = null, ratio = 0;
+
+var hist = [];
+
+function addHist(sign) {
+  if (hist.length && hist[hist.length-1] === sign) return;
+  hist.push(sign);
+  if (hist.length > 30) hist.shift();
+  renderHist();
+}
+
+function renderHist() {
+  historyBar.querySelectorAll('.history-word').forEach(function(el){ el.remove(); });
+  hist.forEach(function(w){
+    var s = document.createElement('span');
+    s.className = 'history-word';
+    s.textContent = w;
+    historyBar.insertBefore(s, clearBtn);
+  });
+  historyBar.scrollLeft = historyBar.scrollWidth;
+}
+
+clearBtn.addEventListener('click', function(){
+  hist = [];
+  renderHist();
+  dispSign = null;
+  signLabel.textContent = '';
+  signLabel.style.opacity = '0';
+  confidenceBar.style.width = '0%';
+});
+
+var busy = false;
+
+var hands = new Hands({
+  locateFile: function(f){ return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'+f; }
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.75,
+  minTrackingConfidence: 0.65
+});
+
+hands.onResults(function(results) {
+  busy = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
+    smLm = null; lastSign = null; ratio = 0; voteQ = [];
+    signLabel.style.opacity = '0';
+    confidenceBar.style.width = '0%';
+    return;
+  }
+
+  var lm = smooth(results.multiHandLandmarks[0]);
+
+  drawConnectors(ctx, lm, HAND_CONNECTIONS, {color:'rgba(100,200,255,0.5)', lineWidth:2});
+  drawLandmarks(ctx, lm, {color:'rgba(255,255,255,0.9)', fillColor:'rgba(60,160,255,0.6)', lineWidth:1, radius:4});
+
+  var raw    = classify(lm);
+  var stable = stableSign(raw);
+  var now    = Date.now();
+
+  if (stable) {
+    if (stable !== lastSign) {
+      lastSign = stable; holdStart = now; ratio = 0;
+    } else {
+      var elapsed = now - holdStart;
+      ratio = Math.min(1, elapsed / HOLD_MS);
+      if (elapsed >= HOLD_MS && stable !== dispSign) {
+        dispSign = stable;
+        addHist(stable);
       }
-
-      const bones = BONES.map(([a,b])=>{
-        const r = boneThickness(a,b);
-        const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r*1.15, 1, 12), boneMat);
-        group.add(c);
-        return {a,b,mesh:c};
-      });
-
-      const palmGeo = new THREE.BufferGeometry();
-      const palmVerts = new Float32Array(18);
-      palmGeo.setAttribute("position", new THREE.BufferAttribute(palmVerts, 3));
-      palmGeo.setIndex([0,1,2, 0,2,3, 0,3,4, 1,2,3, 1,3,4]);
-      palmGeo.computeVertexNormals();
-      const palmMesh = new THREE.Mesh(palmGeo, palmMat);
-      group.add(palmMesh);
-
-      const target = Array.from({length:21}, ()=>new THREE.Vector3());
-      let has = false;
-      let zRef = 0;
-
-      return { group, joints, bones, palmGeo, palmMesh, target, get has(){return has;}, set has(v){has=v;}, get zRef(){return zRef;}, set zRef(v){zRef=v;} };
     }
+    signLabel.textContent = stable;
+    signLabel.style.opacity = String(0.3 + ratio * 0.7);
+    confidenceBar.style.width = (ratio * 100) + '%';
+  } else {
+    lastSign = null; ratio = 0; dispSign = null;
+    signLabel.style.opacity = '0';
+    confidenceBar.style.width = '0%';
+  }
+});
 
-    const handA = makeHand(0xa7f3d0, 0x93c5fd, 0xfde68a);
-    const handB = makeHand(0xf9a8d4, 0x60a5fa, 0xa7f3d0);
+function loop() {
+  if (!busy && video.readyState >= 2) {
+    busy = true;
+    hands.send({image: video}).catch(function(){ busy = false; });
+  }
+  requestAnimationFrame(loop);
+}
 
-    function updatePalm(hand){
-      const p = hand.palmGeo.attributes.position.array;
+hands.initialize().then(function(){
+  statusEl.textContent = 'Camera starting...';
+  return navigator.mediaDevices.getUserMedia({
+    video: {width:{ideal:1280}, height:{ideal:720}, facingMode:'user'}
+  });
+}).then(function(stream){
+  video.srcObject = stream;
+  return video.play();
+}).then(function(){
+  statusEl.textContent = 'Ready';
+  requestAnimationFrame(loop);
+}).catch(function(err){
+  statusEl.textContent = 'Error: ' + err.message;
+});
 
-      const wrist = hand.joints[0].position;
-      const iMcp  = hand.joints[5].position;
-      const mMcp  = hand.joints[9].position;
-      const rMcp  = hand.joints[13].position;
-      const pMcp  = hand.joints[17].position;
-
-      const v0 = wrist.clone().lerp(mMcp, 0.35);
-      const v1 = iMcp.clone().lerp(mMcp, 0.2);
-      const v2 = mMcp.clone();
-      const v3 = rMcp.clone().lerp(mMcp, 0.2);
-      const v4 = pMcp.clone().lerp(rMcp, 0.25);
-
-      const verts = [v0,v1,v2,v3,v4];
-      for (let i=0;i<5;i++){
-        p[i*3+0]=verts[i].x;
-        p[i*3+1]=verts[i].y;
-        p[i*3+2]=verts[i].z;
-      }
-      hand.palmGeo.attributes.position.needsUpdate = true;
-      hand.palmGeo.computeVertexNormals();
-    }
-
-    // TRUE AR mapping: screen landmark -> world point via ray to plane (exact size/position)
-    const _raycaster = new THREE.Raycaster();
-    const _ndc = new THREE.Vector2();
-    const _plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // z = 0 plane
-    const _hit = new THREE.Vector3();
-    const _camDir = new THREE.Vector3();
-
-    function screenToWorldOnPlane(x01, y01){
-      const nx = x01 * 2 - 1;
-      const ny = 1 - y01 * 2;
-      _ndc.set(nx, ny);
-      _raycaster.setFromCamera(_ndc, camera);
-      _raycaster.ray.intersectPlane(_plane, _hit);
-      return _hit.clone();
-    }
-
-    function applyLandmarksAR(hand, lm){
-      const worldPts = new Array(21);
-
-      for (let i = 0; i < 21; i++){
-        let x = lm[i].x;
-        let y = lm[i].y;
-        if (isInverted) x = 1 - x;
-        worldPts[i] = screenToWorldOnPlane(x, y);
-      }
-
-      const refLen = worldPts[0].distanceTo(worldPts[9]); // wrist -> middle MCP
-      camera.getWorldDirection(_camDir);
-      const towardCamera = _camDir.clone().negate();
-
-      const depthScale = 0.55;
-
-      for (let i = 0; i < 21; i++){
-        const z = (lm[i].z || 0);
-        const depth = (-z) * refLen * depthScale;
-        hand.target[i].copy(worldPts[i]).add(towardCamera.clone().multiplyScalar(depth));
-      }
-
-      hand.has = true;
-    }
-
-    // smoothing
-    let smooth = 0.34;
-    let zDamp  = 0.65;
-
-    const _tmp = new THREE.Vector3();
-    function stepHand(hand){
-      if (!hand.has){
-        hand.group.visible = false;
-        return;
-      }
-      hand.group.visible = true;
-
-      for (let i = 0; i < 21; i++){
-        _tmp.copy(hand.target[i]);
-
-        if (i === 0) hand.zRef = hand.zRef * zDamp + _tmp.z * (1 - zDamp);
-        const zFixed = _tmp.z * (1 - zDamp) + hand.zRef * zDamp;
-
-        hand.joints[i].position.lerp(new THREE.Vector3(_tmp.x, _tmp.y, zFixed), smooth);
-      }
-
-      for (const b of hand.bones) setCylinderBetween(b.mesh, hand.joints[b.a].position, hand.joints[b.b].position);
-      updatePalm(hand);
-
-      hand.group.position.set(0,0,0);
-      hand.palmMesh.visible = true;
-    }
-
-    // --- MediaPipe ---
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
-    });
-
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-      selfieMode: false
-    });
-
-    hands.onResults((results) => {
-      const all = results.multiHandLandmarks || [];
-
-      handA.has = false;
-      handB.has = false;
-
-      if (all.length === 0){
-        statusEl.textContent = "Status: no hand detected";
-        return;
-      }
-
-      statusEl.textContent = "Status: tracking hand";
-
-      applyLandmarksAR(handA, all[0]);
-
-      if (all.length >= 2){
-        applyLandmarksAR(handB, all[1]);
-      }
-    });
-
-    async function startCamera(){
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720, facingMode:"user" },
-        audio: false
-      });
-
-      videoEl.srcObject = stream;
-      await videoEl.play();
-
-      const cam = new Camera(videoEl, {
-        onFrame: async () => { await hands.send({ image: videoEl }); },
-        width: 1280,
-        height: 720
-      });
-      cam.start();
-
-      statusEl.textContent = "Status: show your hands to the camera";
-    }
-
-    startCamera().catch((err) => {
-      console.error(err);
-      statusEl.textContent = "Status: camera blocked (allow permission / use https)";
-    });
-
-    function resize(){
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    window.addEventListener("resize", resize);
-    resize();
-
-    function animate(){
-      requestAnimationFrame(animate);
-      stepHand(handA);
-      stepHand(handB);
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
+})();
+</script>
 </body>
 </html>
